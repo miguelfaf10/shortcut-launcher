@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import threading
 import time
@@ -12,7 +13,55 @@ from watchdog.events import FileSystemEventHandler
 
 SHORTCUTS_DIR = Path(r"C:\dev\launcher\shortcuts")  # change this
 ICON_PATH = Path(r"C:\dev\launcher\src\launcher.ico")
+APP_DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
+SELECTIONS_PATH = APP_DATA_DIR / "ShortcutLauncher" / "selected_scripts.json"
 SELECTED_SCRIPTS = {}
+
+
+def load_selected_scripts():
+    """Restore selections for scripts that still exist."""
+    try:
+        saved_selections = json.loads(SELECTIONS_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"Could not load saved script selections: {e}")
+        return
+
+    if not isinstance(saved_selections, dict):
+        return
+    for folder, paths in saved_selections.items():
+        if not isinstance(folder, str) or not isinstance(paths, list):
+            continue
+        folder_path = Path(folder)
+        scripts = {
+            Path(path) for path in paths
+            if isinstance(path, str)
+        }
+        scripts = {
+            path for path in scripts
+            if path.parent == folder_path
+            and path.suffix.lower() in (".bat", ".cmd")
+            and path.is_file()
+        }
+        if scripts:
+            SELECTED_SCRIPTS[folder_path] = scripts
+
+
+def save_selected_scripts():
+    """Persist the current folder-to-script selections."""
+    saved_selections = {
+        str(folder): sorted(str(path) for path in scripts)
+        for folder, scripts in SELECTED_SCRIPTS.items()
+        if scripts
+    }
+    temporary_path = SELECTIONS_PATH.with_suffix(".tmp")
+    try:
+        SELECTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_text(json.dumps(saved_selections, indent=2), encoding="utf-8")
+        temporary_path.replace(SELECTIONS_PATH)
+    except OSError as e:
+        print(f"Could not save script selections: {e}")
 
 
 def open_shortcut(path: Path):
@@ -42,6 +91,7 @@ def make_shortcut_item(name: str, path: Path, folder: Path):
                 selected.remove(path)
             else:
                 selected.add(path)
+            save_selected_scripts()
             update_menu(icon)
 
         return Item(
@@ -72,6 +122,7 @@ def is_async_script(path: Path) -> bool:
 def build_menu_from_folder(folder: Path):
     """Recursively build a pystray Menu for a given folder."""
     script_items = []
+    script_paths = []
     shortcut_items = []
     has_shortcut_entry = False
     items = []
@@ -84,16 +135,29 @@ def build_menu_from_folder(folder: Path):
             item = make_shortcut_item(entry.stem, entry, folder)
             if entry.suffix.lower() in (".bat", ".cmd"):
                 script_items.append(item)
+                script_paths.append(entry)
             else:
                 shortcut_items.append(item)
                 has_shortcut_entry = True
 
     if script_items:
+        def select_all_scripts(icon, item):
+            SELECTED_SCRIPTS[folder] = set(script_paths)
+            save_selected_scripts()
+            update_menu(icon)
+
+        def deselect_all_scripts(icon, item):
+            SELECTED_SCRIPTS.pop(folder, None)
+            save_selected_scripts()
+            update_menu(icon)
+
         items.append(Item(
             "Run selected scripts",
             lambda icon, item: run_selected_scripts(icon, item, folder),
             enabled=lambda item: bool(SELECTED_SCRIPTS.get(folder)),
         ))
+        items.append(Item("Select all scripts", select_all_scripts))
+        items.append(Item("Deselect all scripts", deselect_all_scripts))
         items.append(Menu.SEPARATOR)
         items.extend(script_items)
     if script_items and has_shortcut_entry:
@@ -161,6 +225,7 @@ def create_tray_icon():
 
 if __name__ == "__main__":
     print("######## Shortcut Launcher ########")
+    load_selected_scripts()
     tray_icon = create_tray_icon()
 
     # Start watchdog observer

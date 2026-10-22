@@ -25,7 +25,7 @@ The launcher icon appears in the system tray. Choose **Exit** from its menu to c
 
 - Subfolders in `shortcuts/` become nested menus. The menu refreshes automatically when files or folders change.
 - `.lnk` and `.exe` entries launch directly.
-- `.bat` and `.cmd` entries show `[ ]` when unselected and `[x]` when selected. Each folder has its own **Run selected scripts** action, which runs that folder's selected scripts in alphabetical order.
+- `.bat` and `.cmd` entries show `[ ]` when unselected and `[x]` when selected. Selections are saved in the user's AppData and restored when the launcher restarts. Each folder has its own **Run selected scripts** action, which runs that folder's selected scripts in alphabetical order.
 - Synchronous scripts run one at a time. The next script starts only after the current script exits successfully; a nonzero exit code stops the sequence.
 - Mark a batch file asynchronous by putting `:: launcher: async` on one of its first ten lines. The launcher waits five seconds before starting it in a new console, then continues without waiting for its exit code.
 - Clicking a batch-file entry directly opens it in a new console; the async marker only affects **Run selected scripts**.
